@@ -8,12 +8,11 @@ Classes for drawing maps.
 from __future__ import (absolute_import, division, print_function)
 
 import json
-
 from collections import OrderedDict
 
 from branca.element import CssLink, Element, Figure, Html, JavascriptLink, MacroElement  # noqa
 
-from folium.utilities import _validate_coordinates, get_bounds, camelize
+from folium.utilities import _validate_coordinates, camelize, get_bounds
 
 from jinja2 import Template
 
@@ -82,6 +81,9 @@ class FeatureGroup(Layer):
 class LayerControl(MacroElement):
     """
     Creates a LayerControl object to be added on a folium map.
+
+    This object should be added to a Map object. Only Layer children
+    of Map are included in the layer control.
 
     Parameters
     ----------
@@ -186,21 +188,31 @@ class Icon(MacroElement):
                     iconColor: '{{this.icon_color}}',
                     markerColor: '{{this.color}}',
                     prefix: '{{this.prefix}}',
-                    extraClasses: 'fa-rotate-{{this.angle}}'
+                    extraClasses: 'fa-rotate-{{this.angle}}',
+                    spin: {{this.spin|tojson}}
                     });
                 {{this._parent.get_name()}}.setIcon({{this.get_name()}});
             {% endmacro %}
             """)
 
     def __init__(self, color='blue', icon_color='white', icon='info-sign',
-                 angle=0, prefix='glyphicon'):
+                 angle=0, prefix='glyphicon', spin=False):
         super(Icon, self).__init__()
-        self._name = 'Icon'
+        self._name = 'AwesomeMarkers.icon'
         self.color = color
         self.icon = icon
         self.icon_color = icon_color
         self.angle = angle
         self.prefix = prefix
+        self.spin = spin
+        self.options = json.dumps({
+            'icon': icon,
+            'iconColor': icon_color,
+            'markerColor': color,
+            'prefix': prefix,
+            'extraClasses': 'fa-rotate' + angle.__str__(),
+            'spin': spin
+        })
 
 
 class Marker(MacroElement):
@@ -219,6 +231,8 @@ class Marker(MacroElement):
         Display a text when hovering over the object.
     icon: Icon plugin
         the Icon plugin to use to render the marker.
+    draggable: bool, default False
+        Set to True to be able to drag the marker around the map.
 
     Returns
     -------
@@ -237,19 +251,28 @@ class Marker(MacroElement):
         var {{this.get_name()}} = L.marker(
             [{{this.location[0]}}, {{this.location[1]}}],
             {
-                icon: new L.Icon.Default()
+                icon: new L.Icon.Default(),
+                {%- if this.draggable %}
+                draggable: true,
+                autoPan: true,
+                {%- endif %}
                 }
             ).addTo({{this._parent.get_name()}});
         {% endmacro %}
         """)
 
-    def __init__(self, location, popup=None, tooltip=None, icon=None):
+    def __init__(self, location=None, popup=None, tooltip=None, icon=None,
+                 draggable=False):
         super(Marker, self).__init__()
         self._name = 'Marker'
-        self.tooltip = tooltip
-        self.location = _validate_coordinates(location)
+        self.location = _validate_coordinates(location) if location is not None \
+            else location
+        self.draggable = draggable
         if icon is not None:
             self.add_child(icon)
+            self.icon_type = icon._name
+            kwargs.update(icon=icon.options)
+        self.options = json.dumps(kwargs)
         if isinstance(popup, text_type) or isinstance(popup, binary_type):
             self.add_child(Popup(popup))
         elif popup is not None:
@@ -259,6 +282,15 @@ class Marker(MacroElement):
         elif tooltip is not None:
             self.add_child(Tooltip(tooltip.__str__()))
 
+    def render(self, **kwargs):
+        if hasattr(self, '_parent') and self.location is None:
+            raise ValueError(
+                "All instances of folium {} must have valid coordinates to add "
+                "to folium {}.".format(self._name[0].upper() + self._name[1:],
+                                       self._parent._name.upper() +
+                                       self._name[1:])
+            )
+
     def _get_self_bounds(self):
         """
         Computes the bounds of the object itself (not including it's children)
@@ -266,6 +298,14 @@ class Marker(MacroElement):
 
         """
         return get_bounds(self.location)
+
+    def render(self, **kwargs):
+        """
+        Test location on render to ensure coordinates have been provided if the
+        Marker is a part of the map.
+        """
+        if hasattr(self, '_parent') and self.location is None:
+            raise ValueError("Standalone markers must have a location.")
 
 
 class Popup(Element):
@@ -277,7 +317,7 @@ class Popup(Element):
         Content of the Popup.
     parse_html: bool, default False
         True if the popup is a template that needs to the rendered first.
-    max_width: int, default 300
+    max_width: int for pixels or text for percentages, default '100%'
         The maximal width of the popup.
     show: bool, default False
         True renders the popup open on page load.
@@ -290,7 +330,7 @@ class Popup(Element):
             {% if this.sticky %}, closeOnClick: false{% endif %}});
 
             {% for name, element in this.html._children.items() %}
-                var {{name}} = $('{{element.render(**kwargs).replace('\\n',' ')}}')[0];
+                var {{ name }} = $(`{{ element.render(**kwargs).replace('\\n',' ') }}`)[0];
                 {{this.get_name()}}.setContent({{name}});
             {% endfor %}
 
@@ -302,10 +342,10 @@ class Popup(Element):
             {% endfor %}
         """)  # noqa
 
-    def __init__(self, html=None, parse_html=False, max_width=300, show=False,
+    def __init__(self, html=None, parse_html=False, max_width='100%', show=False,
                  sticky=False):
         super(Popup, self).__init__()
-        self._name = 'Popup'
+        self._name = 'popup'
         self.header = Element()
         self.html = Element()
         self.script = Element()
@@ -361,27 +401,27 @@ class Tooltip(MacroElement):
     _template = Template(u"""
         {% macro script(this, kwargs) %}
         {{ this._parent.get_name() }}.bindTooltip(
-            '<div{% if this.style %} style="{{ this.style }}"{% endif %}>'
-            + '{{ this.text }}' + '</div>',
+            `<div{% if this.style %} style="{{ this.style }}"{% endif %}>`
+            + `{{ this.text }}` + `</div>`,
             {{ this.options }}
         );
         {% endmacro %}
         """)
     valid_options = {
-        "pane": (str, ),
-        "offset": (tuple, ),
-        "direction": (str, ),
-        "permanent": (bool, ),
-        "sticky": (bool, ),
-        "interactive": (bool, ),
-        "opacity": (float, int),
-        "attribution": (str, ),
-        "className": (str, ),
+        'pane': (str, ),
+        'offset': (tuple, ),
+        'direction': (str, ),
+        'permanent': (bool, ),
+        'sticky': (bool, ),
+        'interactive': (bool, ),
+        'opacity': (float, int),
+        'attribution': (str, ),
+        'className': (str, ),
     }
 
     def __init__(self, text, style=None, sticky=True, **kwargs):
         super(Tooltip, self).__init__()
-        self._name = "Tooltip"
+        self._name = 'tooltip'
 
         self.text = str(text)
 
@@ -390,7 +430,7 @@ class Tooltip(MacroElement):
 
         if style:
             assert isinstance(style, str), \
-                "Pass a valid inline HTML style property string to style."
+                'Pass a valid inline HTML style property string to style.'
             # noqa outside of type checking.
             self.style = style
 
@@ -399,11 +439,11 @@ class Tooltip(MacroElement):
         kwargs = {camelize(key): value for key, value in kwargs.items()}
         for key in kwargs.keys():
             assert key in self.valid_options, (
-                "The option {} is not in the available options: {}."
+                'The option {} is not in the available options: {}.'
                 .format(key, ', '.join(self.valid_options))
             )
             assert isinstance(kwargs[key], self.valid_options[key]), (
-                "The option {} must be one of the following types: {}."
+                'The option {} must be one of the following types: {}.'
                 .format(key, self.valid_options[key])
             )
         return json.dumps(kwargs)
@@ -445,7 +485,7 @@ class FitBounds(MacroElement):
     def __init__(self, bounds, padding_top_left=None,
                  padding_bottom_right=None, padding=None, max_zoom=None):
         super(FitBounds, self).__init__()
-        self._name = 'FitBounds'
+        self._name = 'fitBounds'
         self.bounds = json.loads(json.dumps(bounds))
         options = {
             'maxZoom': max_zoom,
