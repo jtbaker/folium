@@ -671,7 +671,7 @@ class GeoJsonTooltip(Tooltip):
                     {% if this.toLocaleString %}.toLocaleString(){% endif %}}</td></tr>`
                 ).join(''))
                 +'</table>'
-            }, {{ this.kwargs }});
+            }, {{ this.options }});
         {% endmacro %}
         """)
 
