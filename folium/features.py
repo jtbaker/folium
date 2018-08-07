@@ -683,8 +683,6 @@ class GeoJsonTooltip(Tooltip):
         super(GeoJsonTooltip, self).__init__(
             text='', style=style, sticky=sticky, **kwargs
         )
-        self._name = "Tooltip"
-
         assert isinstance(fields, (list, tuple)), "Please pass a list or " \
                                                   "tuple to fields."
         if aliases is not None:
