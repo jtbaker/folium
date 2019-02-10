@@ -961,6 +961,9 @@ class Choropleth(FeatureGroup):
             color_data = None
 
         self.color_scale = None
+        self.columns = columns
+        self.data = data
+        self.tooltip = tooltip
 
         if color_data is not None and key_on is not None:
             real_values = np.array(list(color_data.values()))
@@ -991,7 +994,7 @@ class Choropleth(FeatureGroup):
                 bin_edges[-1],
                 (1 if increasing else -1) * np.inf)
 
-            key_on = key_on[8:] if key_on.startswith('feature.') else key_on
+            self.key_on = key_on[8:] if key_on.startswith('feature.') else key_on
 
             def get_by_key(obj, key):
                 return (obj.get(key, None) if len(key.split('.')) <= 1 else
@@ -1051,7 +1054,17 @@ class Choropleth(FeatureGroup):
             self.add_child(self.color_scale)
 
     def render(self, **kwargs):
-        """Render the GeoJson/TopoJson and color scale objects."""
+        """Update tooltip, render the GeoJson/TopoJson and color scale objects."""
+        if self.tooltip is not None:
+            for col in self.tooltip.fields:
+                for feature in self.geojson.data['features']:
+                    if feature['properties'].get(col) is None:
+                        try:
+                            feature['properties'][col] = self.data.loc[
+                                self.data[self.columns[0]] == feature[self.key_on.split('.')[0]][
+                                    self.key_on.split('.')[1]], col].iloc[0]
+                        except IndexError:
+                            feature['properties'][col] = None
         if self.color_scale:
             # ColorMap needs Map as its parent
             assert isinstance(self._parent, Map), ('Choropleth must be added'
