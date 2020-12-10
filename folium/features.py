@@ -446,15 +446,15 @@ class GeoJson(Layer):
                 }
             {% endif %}
             ).addTo({{this._parent.get_name()}});
-        {{this.get_name()}}.eachLayer(function(layer) {
-        var style=layer.feature.properties.style
-        if(layer instanceof L.Marker){
-        layer.setIcon(new L.{% if this.marker.icon_type %}{{this.marker.icon_type}}{% else %}Icon{% endif %}(style))}
-        else layer.setStyle(style)
-        if(layer instanceof L.Circle && Object.keys(style).includes("radius")){
-        layer.setRadius(style.radius)}
-        })
-        // end jtbaker geojsonmarker branch
+            {{this.get_name()}}.eachLayer(function(layer) {
+            var style=layer.feature.properties.style
+            if(layer instanceof L.Marker){
+            layer.setIcon(new L.{% if this.marker.icon_type %}{{this.marker.icon_type}}{% else %}Icon{% endif %}(style))}
+            else layer.setStyle(style)
+            if(layer instanceof L.Circle && Object.keys(style).includes("radius")){
+            layer.setRadius(style.radius)}
+            })
+            // end jtbaker geojsonmarker branch
             {{ this.json }},
             {
             {%- if this.smooth_factor is not none  %}
